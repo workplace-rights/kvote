@@ -272,13 +272,8 @@ function resetRoom(){
   });
 }
 
-// 頁面載入時檢查是否已有活動
-fetch('/api/state').then(r=>r.json()).then(d=>{
-  if(d.total_groups > 0){
-    state = d;
-    connectSSE();
-  }
-});
+// 頁面載入時一律連接 SSE，讓畫面自動同步
+connectSSE();
 </script>
 </body>
 </html>
