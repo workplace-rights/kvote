@@ -1,12 +1,14 @@
 from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
-import sqlite3, json, queue, threading, time, os
+import sqlite3, json, queue, threading, os
 
-app = Flask(__name__, static_folder='static', static_url_path='/static')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC = os.path.join(BASE_DIR, 'static')
+
+app = Flask(__name__)
 CORS(app)
-DB = 'vote.db'
+DB = os.path.join(BASE_DIR, 'vote.db')
 
-# SSE 訂閱者 queues
 _subscribers = []
 _sub_lock = threading.Lock()
 
@@ -34,12 +36,10 @@ def init_db():
                 voted_at TEXT DEFAULT (datetime('now','localtime'))
             );
         ''')
-        # 確保 room 有一筆資料
         db.execute('INSERT OR IGNORE INTO room(id) VALUES(1)')
 
 init_db()
 
-# ── SSE 廣播 ─────────────────────────────────────────
 def broadcast(event, data):
     msg = f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
     with _sub_lock:
@@ -57,10 +57,7 @@ def get_state():
         room = dict(db.execute('SELECT * FROM room WHERE id=1').fetchone())
         parts = [r['group_name'] for r in db.execute('SELECT group_name FROM participants ORDER BY joined_at').fetchall()]
         votes = {r['voter_group']: r['voted_for'] for r in db.execute('SELECT voter_group, voted_for FROM votes').fetchall()}
-        # tally
-        tally = {}
-        for g in parts:
-            tally[g] = 0
+        tally = {g: 0 for g in parts}
         for vf in votes.values():
             if vf in tally:
                 tally[vf] += 1
@@ -75,27 +72,24 @@ def get_state():
         'not_voted': not_voted,
     }
 
-# ── 靜態頁面 ──────────────────────────────────────────
 @app.route('/')
 def index():
-    return send_from_directory('static', 'host.html')
+    return send_from_directory(STATIC, 'host.html')
 
 @app.route('/host')
 def host():
-    return send_from_directory('static', 'host.html')
+    return send_from_directory(STATIC, 'host.html')
 
 @app.route('/vote')
 def vote_page():
-    return send_from_directory('static', 'vote.html')
+    return send_from_directory(STATIC, 'vote.html')
 
-# ── SSE ──────────────────────────────────────────────
 @app.route('/api/events')
 def sse():
     q = queue.Queue(maxsize=50)
     with _sub_lock:
         _subscribers.append(q)
     def stream():
-        # 送初始狀態
         state = get_state()
         yield f"event: state\ndata: {json.dumps(state, ensure_ascii=False)}\n\n"
         while True:
@@ -107,7 +101,6 @@ def sse():
     return Response(stream(), mimetype='text/event-stream',
                     headers={'Cache-Control':'no-cache','X-Accel-Buffering':'no'})
 
-# ── 老師 API ─────────────────────────────────────────
 @app.route('/api/setup', methods=['POST'])
 def setup():
     data = request.json
@@ -144,7 +137,6 @@ def reset():
     broadcast('state', get_state())
     return jsonify({'ok': True})
 
-# ── 學生 API ─────────────────────────────────────────
 @app.route('/api/state')
 def state():
     return jsonify(get_state())
@@ -158,7 +150,6 @@ def join():
         if room['status'] == 'revealed':
             return jsonify({'error': '活動已結束'}), 403
         n = room['total_groups']
-        # 驗證組名格式（第1組~第N組）
         valid = [f'第{i+1}組' for i in range(n)]
         if group not in valid:
             return jsonify({'error': '無效的組別'}), 400
