@@ -12,13 +12,13 @@ body{font-family:'Microsoft JhengHei',Arial,sans-serif;background:#0d0d1a;color:
 .topbar .sub{font-size:12px;color:#8888aa;margin-top:2px}
 .container{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px;max-width:480px;margin:0 auto;width:100%}
 .card{background:#1a1a2e;border-radius:16px;padding:24px;width:100%;border:1px solid #2a2a4a;margin-bottom:16px}
-.section-title{font-size:15px;font-weight:600;margin-bottom:16px;color:#f0f0ff}
+.section-title{font-size:15px;font-weight:600;margin-bottom:16px}
 .info-text{font-size:13px;color:#8888aa;margin-bottom:14px}
 .group-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .group-btn{padding:16px 8px;border-radius:12px;border:2px solid #2a2a4a;background:#12122a;color:#f0f0ff;font-size:15px;font-weight:500;cursor:pointer;font-family:inherit;text-align:center;transition:all 0.15s;-webkit-tap-highlight-color:transparent}
 .group-btn:active{transform:scale(0.95)}
 .group-btn.selected{background:#7c3aed;border-color:#7c3aed;color:#fff}
-.group-btn.taken{opacity:0.35;cursor:not-allowed}
+.group-btn.taken{opacity:0.35;cursor:not-allowed;border-color:#3a2a2a;background:#1a0a0a}
 .vote-grid{display:flex;flex-direction:column;gap:10px}
 .vote-btn{padding:18px 20px;border-radius:12px;border:2px solid #2a2a4a;background:#12122a;color:#f0f0ff;font-size:16px;font-weight:500;cursor:pointer;font-family:inherit;text-align:left;transition:all 0.15s;-webkit-tap-highlight-color:transparent;display:flex;align-items:center;gap:12px}
 .vote-btn:active{transform:scale(0.98)}
@@ -31,7 +31,7 @@ body{font-family:'Microsoft JhengHei',Arial,sans-serif;background:#0d0d1a;color:
 .btn-confirm{width:100%;padding:16px;border-radius:12px;border:none;background:#7c3aed;color:#fff;font-size:17px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:4px;transition:all 0.15s}
 .btn-confirm:disabled{background:#2a2a4a;color:#666;cursor:not-allowed}
 .btn-confirm:not(:disabled):active{transform:scale(0.98);background:#6d28d9}
-.state-box{text-align:center;padding:20px 0}
+.state-box{text-align:center;padding:20px 0;width:100%}
 .state-icon{font-size:64px;margin-bottom:16px}
 .state-title{font-size:20px;font-weight:600;margin-bottom:8px}
 .state-sub{font-size:14px;color:#8888aa;line-height:1.6}
@@ -44,51 +44,164 @@ body{font-family:'Microsoft JhengHei',Arial,sans-serif;background:#0d0d1a;color:
   <h1>🏆 最佳貢獻獎</h1>
   <div class="sub" id="topbar-sub">連線中...</div>
 </div>
-<div class="container" id="main"></div>
+<div class="container" id="main">
+  <div class="state-box">
+    <div class="state-icon pulse">⏳</div>
+    <div class="state-title">連線中...</div>
+  </div>
+</div>
+
 <script>
-let myGroup=null,hasJoined=false,hasVoted=false,currentState=null,es=null;
+let myGroup = null, hasJoined = false, hasVoted = false, currentState = null;
+window._selectedVote = null;
+
 function connectSSE(){
-  es=new EventSource('/api/events');
-  es.addEventListener('state',e=>{currentState=JSON.parse(e.data);render();});
-  es.onerror=()=>{setTimeout(connectSSE,3000);es.close();};
+  const es = new EventSource('/api/events');
+  es.addEventListener('state', e => {
+    currentState = JSON.parse(e.data);
+    render();
+  });
+  es.onerror = () => { setTimeout(connectSSE, 3000); es.close(); };
 }
+
 function render(){
-  const s=currentState;if(!s)return;
-  document.getElementById('topbar-sub').textContent=s.status==='waiting'?'⏳ 等待老師開始':s.status==='voting'?'🗳 投票進行中':s.status==='revealed'?'🏆 結果公布':'';
-  const main=document.getElementById('main');
-  if(hasVoted){if(s.status==='revealed'){renderDoneRevealed(s);return;}main.innerHTML=`<div class="state-box"><div class="state-icon">✅</div><div class="state-title">已送出投票！</div><div class="state-sub">等待老師公布結果...</div></div>`;return;}
-  if(s.status==='waiting'){if(!hasJoined)renderJoin(s);else renderWaitingJoined();}
-  else if(s.status==='voting'){if(!hasJoined){main.innerHTML=`<div class="state-box"><div class="state-icon">⚠️</div><div class="state-title">加入太晚了</div><div class="state-sub">投票已開始，請下次早點加入</div></div>`;return;}renderVote(s);}
-  else if(s.status==='revealed'){renderDoneRevealed(s);}
+  const s = currentState;
+  if(!s) return;
+
+  document.getElementById('topbar-sub').textContent =
+    s.status==='waiting' ? '⏳ 等待老師開始' :
+    s.status==='voting'  ? '🗳 投票進行中' :
+    s.status==='revealed'? '🏆 結果公布' : '';
+
+  if(hasVoted){
+    if(s.status === 'revealed') renderDoneRevealed(s);
+    else showMsg('✅','已送出投票！','等待老師公布結果...');
+    return;
+  }
+
+  if(s.status === 'waiting'){
+    if(!hasJoined) renderJoin(s);
+    else showWaitingJoined();
+  } else if(s.status === 'voting'){
+    if(!hasJoined){ showMsg('⚠️','加入太晚了','投票已開始，請下次早點加入'); return; }
+    renderVote(s);
+  } else if(s.status === 'revealed'){
+    renderDoneRevealed(s);
+  }
 }
+
+function showMsg(icon, title, sub){
+  document.getElementById('main').innerHTML =
+    `<div class="state-box"><div class="state-icon">${icon}</div><div class="state-title">${title}</div><div class="state-sub">${sub}</div></div>`;
+}
+
 function renderJoin(s){
-  const groups=Array.from({length:s.total_groups},(_,i)=>`第${i+1}組`);
-  document.getElementById('main').innerHTML=`<div class="card"><div class="section-title">👋 我是...</div><div class="info-text">選擇你的組別（每組限一台手機）</div><div class="group-grid">${groups.map(g=>{const taken=s.participants.includes(g);return`<button class="group-btn ${taken?'taken':''}" onclick="${taken?'':''}" data-g="${g}" ${taken?'disabled':''}>${g}${taken?' ✓':''}</button>`;}).join('')}</div></div><button class="btn-confirm" id="join-btn" onclick="doJoin()" disabled>加入活動</button>`;
-  document.querySelectorAll('.group-btn:not([disabled])').forEach(btn=>{btn.onclick=()=>selectGroup(btn.dataset.g);});
+  if(!s.total_groups || s.total_groups === 0){
+    showMsg('⏳','等待老師設定','請稍候...');
+    return;
+  }
+  const groups = Array.from({length:s.total_groups},(_,i)=>`第${i+1}組`);
+  document.getElementById('main').innerHTML = `
+    <div class="card">
+      <div class="section-title">👋 我是...</div>
+      <div class="info-text">選擇你的組別（每組限一台手機）</div>
+      <div class="group-grid" id="group-grid">
+        ${groups.map(g => {
+          const taken = s.participants.includes(g);
+          return `<button class="group-btn ${taken?'taken':''}" data-g="${g}" ${taken?'disabled':''}>${g}${taken?' ✓':''}</button>`;
+        }).join('')}
+      </div>
+    </div>
+    <button class="btn-confirm" id="join-btn" onclick="doJoin()" disabled>加入活動</button>`;
+  document.querySelectorAll('.group-btn:not([disabled])').forEach(btn => {
+    btn.onclick = () => {
+      myGroup = btn.dataset.g;
+      document.querySelectorAll('.group-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      document.getElementById('join-btn').disabled = false;
+    };
+  });
 }
-function selectGroup(g){myGroup=g;document.querySelectorAll('.group-btn').forEach(el=>el.classList.toggle('selected',el.dataset.g===g));document.getElementById('join-btn').disabled=false;}
+
 function doJoin(){
-  if(!myGroup)return;
+  if(!myGroup) return;
+  const btn = document.getElementById('join-btn');
+  btn.disabled = true; btn.textContent = '加入中...';
   fetch('/api/join',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({group:myGroup})})
-    .then(r=>r.json()).then(d=>{if(d.ok){hasJoined=true;render();}else if(d.already_joined){alert('此組已有人加入，請選其他組');myGroup=null;}else alert(d.error||'加入失敗');});
+    .then(r=>r.json()).then(d=>{
+      if(d.ok){ hasJoined = true; render(); }
+      else if(d.already_joined){ alert('此組已有人加入，請選其他組'); myGroup = null; btn.disabled = false; btn.textContent = '加入活動'; }
+      else { alert(d.error||'加入失敗'); btn.disabled = false; btn.textContent = '加入活動'; }
+    });
 }
-function renderWaitingJoined(){document.getElementById('main').innerHTML=`<div class="state-box"><div class="state-icon pulse">⏳</div><div class="state-title">${myGroup} 已加入！</div><div class="state-sub">等待老師開始投票...<br><br>請把手機畫面保持開啟</div></div>`;}
+
+function showWaitingJoined(){
+  document.getElementById('main').innerHTML = `
+    <div class="state-box">
+      <div class="state-icon pulse">⏳</div>
+      <div class="state-title">${myGroup} 已加入！</div>
+      <div class="state-sub">等待老師開始投票...<br><br>請把手機畫面保持開啟</div>
+    </div>`;
+}
+
 function renderVote(s){
-  document.getElementById('main').innerHTML=`<div class="card"><div class="section-title">🗳 選出最佳貢獻獎</div><div class="info-text">你是 <strong>${myGroup}</strong>，選出表現最佳的組別</div><div class="vote-grid">${s.participants.map(g=>{const isOwn=g===myGroup;return`<button class="vote-btn ${isOwn?'own':''}" id="vbtn-${g}" ${isOwn?'disabled':''} data-g="${g}"><div class="vote-radio"></div><span>${g}${isOwn?' （自己）':''}</span></button>`;}).join('')}</div></div><button class="btn-confirm" id="vote-btn" onclick="doVote()" disabled>確認投票</button>`;
-  window._selectedVote=null;
-  document.querySelectorAll('.vote-btn:not([disabled])').forEach(btn=>{btn.onclick=()=>{window._selectedVote=btn.dataset.g;document.querySelectorAll('.vote-btn').forEach(el=>el.classList.remove('selected'));btn.classList.add('selected');document.getElementById('vote-btn').disabled=false;};});
+  window._selectedVote = null;
+  document.getElementById('main').innerHTML = `
+    <div class="card">
+      <div class="section-title">🗳 選出最佳貢獻獎</div>
+      <div class="info-text">你是 <strong>${myGroup}</strong>，選出表現最佳的組別</div>
+      <div class="vote-grid">
+        ${s.participants.map(g => {
+          const isOwn = g === myGroup;
+          return `<button class="vote-btn ${isOwn?'own':''}" data-g="${g}" ${isOwn?'disabled':''}>
+            <div class="vote-radio"></div>
+            <span>${g}${isOwn?' （自己）':''}</span>
+          </button>`;
+        }).join('')}
+      </div>
+    </div>
+    <button class="btn-confirm" id="vote-btn" onclick="doVote()" disabled>確認投票</button>`;
+  document.querySelectorAll('.vote-btn:not([disabled])').forEach(btn => {
+    btn.onclick = () => {
+      window._selectedVote = btn.dataset.g;
+      document.querySelectorAll('.vote-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      document.getElementById('vote-btn').disabled = false;
+    };
+  });
 }
+
 function doVote(){
-  const v=window._selectedVote;if(!v)return;
-  const btn=document.getElementById('vote-btn');btn.disabled=true;btn.textContent='送出中...';
+  const v = window._selectedVote;
+  if(!v) return;
+  const btn = document.getElementById('vote-btn');
+  btn.disabled = true; btn.textContent = '送出中...';
   fetch('/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({voter_group:myGroup,voted_for:v})})
-    .then(r=>r.json()).then(d=>{if(d.ok){hasVoted=true;render();}else{btn.disabled=false;btn.textContent='確認投票';alert(d.error||'送出失敗');}});
+    .then(r=>r.json()).then(d=>{
+      if(d.ok){ hasVoted = true; render(); }
+      else{ btn.disabled = false; btn.textContent = '確認投票'; alert(d.error||'送出失敗'); }
+    });
 }
+
 function renderDoneRevealed(s){
-  const sorted=[...s.participants].sort((a,b)=>(s.tally[b]||0)-(s.tally[a]||0));
-  const winner=sorted[0];
-  document.getElementById('main').innerHTML=`<div class="state-box"><div class="state-icon">🏆</div><div class="state-title">${winner}</div><div class="state-sub">榮獲最佳貢獻獎！<br>${s.tally[winner]||0} 票</div></div><div class="card" style="margin-top:8px"><div class="section-title" style="font-size:13px;color:#8888aa;margin-bottom:10px">最終結果</div>${sorted.map((g,i)=>`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2a2a4a;font-size:14px"><span>${i===0?'🥇':i===1?'🥈':i===2?'🥉':'　'} ${g}</span><span style="color:#fbbf24;font-weight:600">${s.tally[g]||0} 票</span></div>`).join('')}</div>`;
+  const sorted = [...s.participants].sort((a,b)=>(s.tally[b]||0)-(s.tally[a]||0));
+  const winner = sorted[0];
+  document.getElementById('main').innerHTML = `
+    <div class="state-box">
+      <div class="state-icon">🏆</div>
+      <div class="state-title">${winner}</div>
+      <div class="state-sub">榮獲最佳貢獻獎！<br>${s.tally[winner]||0} 票</div>
+    </div>
+    <div class="card" style="margin-top:8px">
+      <div style="font-size:13px;color:#8888aa;margin-bottom:10px">最終結果</div>
+      ${sorted.map((g,i)=>`
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2a2a4a;font-size:14px">
+          <span>${['🥇','🥈','🥉'][i]||'　'} ${g}</span>
+          <span style="color:#fbbf24;font-weight:600">${s.tally[g]||0} 票</span>
+        </div>`).join('')}
+    </div>`;
 }
+
 connectSSE();
 </script>
 </body>
